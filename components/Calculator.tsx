@@ -116,6 +116,9 @@ export function Calculator({ userId }: Props) {
       exercise_name: exerciseName.trim() || 'Unnamed exercise',
       exercise_type: equipment,
       working_weight_kg: plan.workingSet.weight,
+      one_rep_max_kg: parseFloat(oneRepMax),
+      target_reps: plan.workingSet.reps,
+      target_sets: plan.workingSet.sets,
       warmup_sets: plan.warmupSets,
     })
     setSaving(false)

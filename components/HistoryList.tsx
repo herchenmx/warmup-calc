@@ -8,10 +8,10 @@ import { deleteSession } from '@/app/history/actions'
 import { formatDate, cn } from '@/lib/utils'
 import type { WorkoutSession } from '@/types'
 
-const EXERCISE_TYPE_LABELS: Record<string, string> = {
-  barbell: 'Barbell',
-  dumbbell: 'Dumbbell',
-  machine: 'Machine',
+const EQUIPMENT_LABELS: Record<string, string> = {
+  barbell:    'Barbell',
+  dumbbell:   'Dumbbell / KB',
+  machine:    'Machine',
   bodyweight: 'Bodyweight',
 }
 
@@ -25,14 +25,12 @@ export function HistoryList({ sessions: initial }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleDelete = async (id: string) => {
-    // Optimistic removal
     setSessions((prev) => prev.filter((s) => s.id !== id))
     setDeletingId(id)
 
     try {
       await deleteSession(id)
     } catch {
-      // Rollback on failure
       setSessions(initial)
       toast({
         title: 'Could not delete session',
@@ -56,6 +54,17 @@ export function HistoryList({ sessions: initial }: Props) {
     <div className="space-y-3">
       {sessions.map((session) => {
         const isDeleting = deletingId === session.id
+
+        const workingLabel =
+          session.target_sets != null && session.target_reps != null
+            ? `${session.target_sets} × ${session.target_reps} reps`
+            : null
+
+        const ormLabel =
+          session.one_rep_max_kg != null
+            ? `1RM ${session.one_rep_max_kg} kg`
+            : null
+
         return (
           <div
             key={session.id}
@@ -64,15 +73,16 @@ export function HistoryList({ sessions: initial }: Props) {
               isDeleting && 'opacity-40 pointer-events-none'
             )}
           >
+            {/* Header row */}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold truncate">{session.exercise_name}</p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <Badge
                     variant="outline"
                     className="border-slate-700 text-slate-400 text-xs"
                   >
-                    {EXERCISE_TYPE_LABELS[session.exercise_type] ?? session.exercise_type}
+                    {EQUIPMENT_LABELS[session.exercise_type] ?? session.exercise_type}
                   </Badge>
                   <span className="text-xs text-slate-500">
                     {formatDate(session.created_at)}
@@ -82,8 +92,13 @@ export function HistoryList({ sessions: initial }: Props) {
 
               <div className="flex items-start gap-3 shrink-0">
                 <div className="text-right">
-                  <p className="text-xl font-bold">{session.working_weight_kg}</p>
-                  <p className="text-xs text-slate-500">kg working</p>
+                  <p className="text-xl font-bold">{session.working_weight_kg} kg</p>
+                  {workingLabel && (
+                    <p className="text-xs text-slate-400">{workingLabel}</p>
+                  )}
+                  {ormLabel && (
+                    <p className="text-xs text-slate-600">{ormLabel}</p>
+                  )}
                 </div>
                 <button
                   onClick={() => handleDelete(session.id)}
@@ -95,6 +110,7 @@ export function HistoryList({ sessions: initial }: Props) {
               </div>
             </div>
 
+            {/* Warmup set pills */}
             {session.warmup_sets.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {session.warmup_sets.map((s) => (

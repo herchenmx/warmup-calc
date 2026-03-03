@@ -59,7 +59,10 @@ export interface WorkoutSession {
   user_id: string
   exercise_name: string
   exercise_type: ExerciseType
-  working_weight_kg: number
+  working_weight_kg: number       // target weight Z
+  one_rep_max_kg: number | null   // null on rows saved before migration
+  target_reps: number | null
+  target_sets: number | null
   warmup_sets: WarmupSet[]
   created_at: string
 }
