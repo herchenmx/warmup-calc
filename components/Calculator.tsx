@@ -44,10 +44,12 @@ export function Calculator({ initialPreferences, userId }: Props) {
     initialPreferences?.default_sets ?? EXERCISE_TYPE_CONFIGS['barbell'].defaultSets
   )
   const [percentages, setPercentages] = useState<number[]>(
-    initialPreferences?.percentages ?? EXERCISE_TYPE_CONFIGS['barbell'].defaultPercentages
+    initialPreferences?.percentages ??
+      getPercentagesForSets('barbell', EXERCISE_TYPE_CONFIGS['barbell'].defaultSets)
   )
   const [reps, setReps] = useState<number[]>(
-    initialPreferences?.reps ?? EXERCISE_TYPE_CONFIGS['barbell'].defaultReps
+    initialPreferences?.reps ??
+      getRepsForSets('barbell', EXERCISE_TYPE_CONFIGS['barbell'].defaultSets)
   )
   const [warmupSets, setWarmupSets] = useState<WarmupSet[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -130,10 +132,7 @@ export function Calculator({ initialPreferences, userId }: Props) {
   }
 
   const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-  const setSizeOptions = Array.from(
-    { length: config.maxSets - config.minSets + 1 },
-    (_, i) => i + config.minSets
-  )
+  const setSizeOptions = Object.keys(config.setOptions).map(Number).sort((a, b) => a - b)
 
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6">
@@ -196,15 +195,15 @@ export function Calculator({ initialPreferences, userId }: Props) {
         </div>
       )}
 
-      {/* Number of warmup sets (only show if range > 1) */}
-      {setSizeOptions.length > 1 && (
+      {/* Number of warmup sets (only show if more than one positive option exists) */}
+      {setSizeOptions.filter((n) => n > 0).length > 1 && (
         <div className="space-y-2">
           <Label className="text-slate-400">
             Warmup sets:{' '}
             <span className="text-slate-200 font-semibold">{numSets}</span>
           </Label>
           <div className="flex gap-2">
-            {setSizeOptions.map((n) => (
+            {setSizeOptions.filter((n) => n > 0).map((n) => (
               <Button
                 key={n}
                 variant={numSets === n ? 'default' : 'outline'}

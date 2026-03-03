@@ -14,62 +14,53 @@ export function roundToNearest2_5(weight: number): number {
 export const EXERCISE_TYPE_CONFIGS: Record<ExerciseType, ExerciseTypeConfig> = {
   barbell: {
     label: 'Barbell',
-    defaultSets: 4,
-    minSets: 3,
-    maxSets: 5,
-    defaultPercentages: [40, 60, 80, 90],
-    defaultReps: [10, 6, 3, 1],
+    defaultSets: 2,
+    setOptions: {
+      2: { percentages: [60, 80],          reps: [6, 3] },
+      3: { percentages: [40, 60, 80],      reps: [10, 6, 3] },
+      4: { percentages: [40, 60, 80, 90],  reps: [10, 6, 3, 1] },
+      5: { percentages: [40, 60, 75, 80, 90], reps: [10, 6, 5, 3, 1] },
+    },
   },
   dumbbell: {
     label: 'Dumbbell',
     defaultSets: 2,
-    minSets: 2,
-    maxSets: 3,
-    defaultPercentages: [50, 75],
-    defaultReps: [10, 6],
+    setOptions: {
+      1: { percentages: [70],          reps: [10] },
+      2: { percentages: [50, 75],      reps: [10, 6] },
+      3: { percentages: [40, 60, 75],  reps: [10, 8, 6] },
+    },
   },
   machine: {
     label: 'Machine',
     defaultSets: 1,
-    minSets: 1,
-    maxSets: 2,
-    defaultPercentages: [60],
-    defaultReps: [10],
+    setOptions: {
+      1: { percentages: [60],     reps: [10] },
+      2: { percentages: [50, 75], reps: [10, 6] },
+    },
   },
   bodyweight: {
     label: 'Bodyweight',
     defaultSets: 0,
-    minSets: 0,
-    maxSets: 1,
-    defaultPercentages: [],
-    defaultReps: [],
+    setOptions: {
+      0: { percentages: [], reps: [] },
+      1: { percentages: [50], reps: [10] },
+    },
   },
 }
-
-// Full percentage/reps tables for when numSets changes
-const FULL_PERCENTAGES = [40, 60, 75, 80, 90]
-const FULL_REPS = [10, 6, 5, 3, 1]
 
 export function getPercentagesForSets(
   exerciseType: ExerciseType,
   numSets: number
 ): number[] {
-  const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-  if (numSets <= config.defaultPercentages.length) {
-    return config.defaultPercentages.slice(0, numSets)
-  }
-  return FULL_PERCENTAGES.slice(0, numSets)
+  return EXERCISE_TYPE_CONFIGS[exerciseType].setOptions[numSets]?.percentages ?? []
 }
 
 export function getRepsForSets(
   exerciseType: ExerciseType,
   numSets: number
 ): number[] {
-  const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-  if (numSets <= config.defaultReps.length) {
-    return config.defaultReps.slice(0, numSets)
-  }
-  return FULL_REPS.slice(0, numSets)
+  return EXERCISE_TYPE_CONFIGS[exerciseType].setOptions[numSets]?.reps ?? []
 }
 
 export function calculateWarmupSets(input: CalculatorInput): WarmupSet[] {
@@ -112,6 +103,9 @@ export function getRecommendation(
   exerciseType: ExerciseType
 ): Recommendation {
   const config = EXERCISE_TYPE_CONFIGS[exerciseType]
+  const setKeys = Object.keys(config.setOptions).map(Number).filter((n) => n > 0)
+  const minSets = Math.min(...setKeys)
+  const maxSets = Math.max(...setKeys)
   const classification = classifyDay(workingWeight, exerciseType)
 
   let suggestedSets: number
@@ -119,16 +113,16 @@ export function getRecommendation(
 
   switch (classification) {
     case 'heavy':
-      suggestedSets = config.maxSets
-      rationale = `Heavy session — ${config.maxSets} warmup sets recommended to peak activation.`
+      suggestedSets = maxSets
+      rationale = `Heavy session — ${maxSets} warmup sets recommended to peak activation.`
       break
     case 'moderate':
       suggestedSets = config.defaultSets
       rationale = `Moderate load — ${config.defaultSets} warmup sets is optimal.`
       break
     case 'light':
-      suggestedSets = config.minSets
-      rationale = `Light session — ${config.minSets} warmup set${config.minSets !== 1 ? 's' : ''} is sufficient.`
+      suggestedSets = minSets
+      rationale = `Light session — ${minSets} warmup set${minSets !== 1 ? 's' : ''} is sufficient.`
       break
   }
 

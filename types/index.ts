@@ -50,11 +50,14 @@ export interface WorkoutSession {
   created_at: string
 }
 
+export interface SetOption {
+  percentages: number[]
+  reps: number[]
+}
+
 export interface ExerciseTypeConfig {
   label: string
   defaultSets: number
-  minSets: number
-  maxSets: number
-  defaultPercentages: number[]
-  defaultReps: number[]
+  /** Keyed by number of sets; defines exact percentages and reps for each option */
+  setOptions: Record<number, SetOption>
 }
