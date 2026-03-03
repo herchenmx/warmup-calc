@@ -1,149 +1,137 @@
 import type {
-  WarmupSet,
-  CalculatorInput,
-  ExerciseType,
-  ExerciseTypeConfig,
-  Recommendation,
+  EquipmentType,
   DayClassification,
+  WarmupSet,
+  WorkoutPlan,
+  WorkoutInput,
 } from '@/types'
 
-export function roundToNearest2_5(weight: number): number {
-  return Math.round(weight / 2.5) * 2.5
+// ── Rounding ─────────────────────────────────────────────────────────────────
+
+/** Round up to nearest whole number (ceil). */
+export function roundUp(n: number): number {
+  return Math.ceil(n)
 }
 
-export const EXERCISE_TYPE_CONFIGS: Record<ExerciseType, ExerciseTypeConfig> = {
-  barbell: {
-    label: 'Barbell',
-    defaultSets: 2,
-    setOptions: {
-      2: { percentages: [60, 80],          reps: [6, 3] },
-      3: { percentages: [40, 60, 80],      reps: [10, 6, 3] },
-      4: { percentages: [40, 60, 80, 90],  reps: [10, 6, 3, 1] },
-      5: { percentages: [40, 60, 75, 80, 90], reps: [10, 6, 5, 3, 1] },
-    },
-  },
-  dumbbell: {
-    label: 'Dumbbell',
-    defaultSets: 2,
-    setOptions: {
-      1: { percentages: [70],          reps: [10] },
-      2: { percentages: [50, 75],      reps: [10, 6] },
-      3: { percentages: [40, 60, 75],  reps: [10, 8, 6] },
-    },
-  },
-  machine: {
-    label: 'Machine',
-    defaultSets: 1,
-    setOptions: {
-      1: { percentages: [60],     reps: [10] },
-      2: { percentages: [50, 75], reps: [10, 6] },
-    },
-  },
-  bodyweight: {
-    label: 'Bodyweight',
-    defaultSets: 0,
-    setOptions: {
-      0: { percentages: [], reps: [] },
-      1: { percentages: [50], reps: [10] },
-    },
-  },
-}
+// ── Load classification ───────────────────────────────────────────────────────
 
-export function getPercentagesForSets(
-  exerciseType: ExerciseType,
-  numSets: number
-): number[] {
-  return EXERCISE_TYPE_CONFIGS[exerciseType].setOptions[numSets]?.percentages ?? []
-}
-
-export function getRepsForSets(
-  exerciseType: ExerciseType,
-  numSets: number
-): number[] {
-  return EXERCISE_TYPE_CONFIGS[exerciseType].setOptions[numSets]?.reps ?? []
-}
-
-export function calculateWarmupSets(input: CalculatorInput): WarmupSet[] {
-  const { workingWeight, numSets, percentages, reps, restSeconds } = input
-  if (numSets === 0) return []
-
-  const activePercentages = percentages.slice(0, numSets)
-  const activeReps = reps.slice(0, numSets)
-
-  return activePercentages.map((pct, i) => ({
-    setNumber: i + 1,
-    percentage: pct,
-    weight: roundToNearest2_5((pct / 100) * workingWeight),
-    reps: activeReps[i] ?? 5,
-    restSeconds: restSeconds?.[i],
-  }))
-}
-
-const TYPICAL_WORKING_WEIGHTS: Record<ExerciseType, number> = {
-  barbell: 100,
-  dumbbell: 30,
-  machine: 80,
-  bodyweight: 0,
-}
-
-export function classifyDay(
-  workingWeight: number,
-  exerciseType: ExerciseType
+/**
+ * Classify load based on target weight as % of 1RM.
+ * Light: <65%  |  Moderate: 65–85%  |  Heavy: >85%
+ */
+export function classifyLoad(
+  targetWeight: number,
+  oneRepMax: number
 ): DayClassification {
-  const typical = TYPICAL_WORKING_WEIGHTS[exerciseType]
-  if (typical === 0) return 'moderate'
-  const ratio = workingWeight / typical
-  if (ratio >= 1.1) return 'heavy'
-  if (ratio >= 0.8) return 'moderate'
+  const pct = (targetWeight / oneRepMax) * 100
+  if (pct > 85) return 'heavy'
+  if (pct >= 65) return 'moderate'
   return 'light'
 }
 
-export function getRecommendation(
-  workingWeight: number,
-  exerciseType: ExerciseType
-): Recommendation {
-  const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-  const setKeys = Object.keys(config.setOptions).map(Number).filter((n) => n > 0)
-  const minSets = Math.min(...setKeys)
-  const maxSets = Math.max(...setKeys)
-  const classification = classifyDay(workingWeight, exerciseType)
+// ── Default warmup sets by equipment + load ───────────────────────────────────
 
-  let suggestedSets: number
-  let rationale: string
-
-  switch (classification) {
-    case 'heavy':
-      suggestedSets = maxSets
-      rationale = `Heavy session — ${maxSets} warmup sets recommended to peak activation.`
-      break
-    case 'moderate':
-      suggestedSets = config.defaultSets
-      rationale = `Moderate load — ${config.defaultSets} warmup sets is optimal.`
-      break
-    case 'light':
-      suggestedSets = minSets
-      rationale = `Light session — ${minSets} warmup set${minSets !== 1 ? 's' : ''} is sufficient.`
-      break
-  }
-
-  return { suggestedSets, classification, rationale }
+const DEFAULT_WARMUP_SETS: Record<EquipmentType, Record<DayClassification, number>> = {
+  barbell:  { light: 2, moderate: 3, heavy: 4 },
+  dumbbell: { light: 1, moderate: 1, heavy: 2 },
+  machine:  { light: 1, moderate: 2, heavy: 2 },
 }
 
-export function validateCalculatorInput(
-  workingWeight: number,
-  numSets: number,
-  percentages: number[],
-  reps: number[]
+export function getDefaultWarmupSets(
+  equipment: EquipmentType,
+  classification: DayClassification
+): number {
+  return DEFAULT_WARMUP_SETS[equipment][classification]
+}
+
+// ── Warmup percentages by number of sets ─────────────────────────────────────
+
+const WARMUP_PERCENTAGES: Record<number, number[]> = {
+  1: [70],
+  2: [60, 80],
+  3: [50, 70, 85],
+  4: [40, 60, 80, 90],
+}
+
+export function getWarmupPercentages(numSets: number): number[] {
+  return WARMUP_PERCENTAGES[numSets] ?? WARMUP_PERCENTAGES[4]
+}
+
+// ── Rep calculation ───────────────────────────────────────────────────────────
+
+/**
+ * Calculate reps for each warmup set based on distance from working set.
+ *
+ *   distance 4 (set 1 of 4) → 100% of Y
+ *   distance 3              → 75%  of Y
+ *   distance 2              → 50%  of Y
+ *   distance 1 (final)      → 1 rep fixed (only when numSets >= 3)
+ *
+ * Mapping by numSets:
+ *   1 set  → [50% of Y]
+ *   2 sets → [75% of Y,  50% of Y]
+ *   3 sets → [75% of Y,  50% of Y, 1]
+ *   4 sets → [100% of Y, 75% of Y, 50% of Y, 1]
+ *
+ * All values rounded up; minimum 1.
+ */
+export function getWarmupReps(numSets: number, targetReps: number): number[] {
+  const ceil = (x: number) => Math.max(1, roundUp(x))
+  switch (numSets) {
+    case 1: return [ceil(targetReps * 0.5)]
+    case 2: return [ceil(targetReps * 0.75), ceil(targetReps * 0.5)]
+    case 3: return [ceil(targetReps * 0.75), ceil(targetReps * 0.5), 1]
+    case 4: return [ceil(targetReps * 1.0),  ceil(targetReps * 0.75), ceil(targetReps * 0.5), 1]
+    default: return [ceil(targetReps * 1.0), ceil(targetReps * 0.75), ceil(targetReps * 0.5), 1]
+  }
+}
+
+// ── Main calculator ───────────────────────────────────────────────────────────
+
+export function calculateWorkoutPlan(input: WorkoutInput): WorkoutPlan {
+  const { equipment, oneRepMax, targetWeight, targetReps, targetSets, numWarmupSets } = input
+
+  const classification = classifyLoad(targetWeight, oneRepMax)
+  const defaultWarmupSets = getDefaultWarmupSets(equipment, classification)
+  const percentages = getWarmupPercentages(numWarmupSets)
+  const reps = getWarmupReps(numWarmupSets, targetReps)
+
+  const warmupSets: WarmupSet[] = percentages.map((pct, i) => ({
+    setNumber: i + 1,
+    percentage: pct,
+    weight: Math.max(1, roundUp((pct / 100) * targetWeight)),
+    reps: reps[i],
+  }))
+
+  return {
+    classification,
+    defaultWarmupSets,
+    warmupSets,
+    workingSet: {
+      sets: targetSets,
+      reps: targetReps,
+      weight: targetWeight,
+    },
+  }
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+export function validateWorkoutInput(
+  oneRepMax: number,
+  targetWeight: number,
+  targetReps: number,
+  targetSets: number
 ): string | null {
-  if (isNaN(workingWeight) || workingWeight <= 0)
-    return 'Enter a working weight greater than 0'
-  if (workingWeight > 1000)
-    return 'Working weight seems unrealistically high'
-  if (numSets > 0 && percentages.some((p) => p <= 0 || p >= 100))
-    return 'Percentages must be between 1 and 99'
-  if (numSets > 0 && reps.some((r) => r <= 0 || r > 30))
-    return 'Reps must be between 1 and 30'
-  if (percentages.length < numSets || reps.length < numSets)
-    return 'Not enough percentages/reps for the selected number of sets'
+  if (isNaN(oneRepMax) || oneRepMax <= 0)
+    return 'Enter your 1RM'
+  if (isNaN(targetWeight) || targetWeight <= 0)
+    return 'Enter a target weight'
+  if (targetWeight > oneRepMax)
+    return 'Target weight cannot exceed your 1RM'
+  if (isNaN(targetReps) || targetReps < 1 || targetReps > 100)
+    return 'Target reps must be between 1 and 100'
+  if (isNaN(targetSets) || targetSets < 1 || targetSets > 20)
+    return 'Target sets must be between 1 and 20'
   return null
 }

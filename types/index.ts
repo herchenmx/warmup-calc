@@ -1,28 +1,42 @@
+// Equipment used in the new calculator
+export type EquipmentType = 'barbell' | 'dumbbell' | 'machine'
+
+// Legacy — kept for existing DB rows / UserPreferences shape
 export type ExerciseType = 'barbell' | 'dumbbell' | 'machine' | 'bodyweight'
+
+export type DayClassification = 'light' | 'moderate' | 'heavy'
 
 export interface WarmupSet {
   setNumber: number
   percentage: number
-  weight: number
+  weight: number   // rounded up to nearest whole number
+  reps: number     // rounded up to nearest whole number
+}
+
+export interface WorkingSet {
+  sets: number
   reps: number
-  restSeconds?: number
+  weight: number
 }
 
-export interface CalculatorInput {
-  workingWeight: number
-  numSets: number
-  percentages: number[]
-  reps: number[]
-  restSeconds?: number[]
-}
-
-export type DayClassification = 'light' | 'moderate' | 'heavy'
-
-export interface Recommendation {
-  suggestedSets: number
+export interface WorkoutPlan {
   classification: DayClassification
-  rationale: string
+  defaultWarmupSets: number
+  warmupSets: WarmupSet[]
+  workingSet: WorkingSet
 }
+
+export interface WorkoutInput {
+  exerciseName: string
+  equipment: EquipmentType
+  oneRepMax: number     // kg
+  targetWeight: number  // Z kg
+  targetReps: number    // Y
+  targetSets: number    // X
+  numWarmupSets: number // 1–4, user-selected
+}
+
+// ── DB shapes ────────────────────────────────────────────────────────────────
 
 export interface Profile {
   id: string
@@ -50,6 +64,8 @@ export interface WorkoutSession {
   created_at: string
 }
 
+// ── Legacy calculator types (kept for settings page compatibility) ────────────
+
 export interface SetOption {
   percentages: number[]
   reps: number[]
@@ -58,6 +74,5 @@ export interface SetOption {
 export interface ExerciseTypeConfig {
   label: string
   defaultSets: number
-  /** Keyed by number of sets; defines exact percentages and reps for each option */
   setOptions: Record<number, SetOption>
 }

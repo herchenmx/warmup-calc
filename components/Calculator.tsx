@@ -3,147 +3,146 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Save, Dumbbell } from 'lucide-react'
 import { ExerciseSelector } from './ExerciseSelector'
-import { WarmupSetCard } from './WarmupSetCard'
+import { WarmupSetCard, WorkingSetCard } from './WarmupSetCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/use-toast'
 import {
-  calculateWarmupSets,
-  getRecommendation,
-  validateCalculatorInput,
-  EXERCISE_TYPE_CONFIGS,
-  getPercentagesForSets,
-  getRepsForSets,
+  calculateWorkoutPlan,
+  validateWorkoutInput,
+  classifyLoad,
+  getDefaultWarmupSets,
 } from '@/lib/calculator'
 import { createClient } from '@/lib/supabase/client'
-import type { ExerciseType, WarmupSet, UserPreferences } from '@/types'
+import type { EquipmentType, WorkoutPlan } from '@/types'
 import { cn } from '@/lib/utils'
 
 const DAY_STYLES = {
-  heavy: 'bg-red-950/60 text-red-300 border-red-900',
+  heavy:    'bg-red-950/60 text-red-300 border-red-900',
   moderate: 'bg-amber-950/60 text-amber-300 border-amber-900',
-  light: 'bg-green-950/60 text-green-300 border-green-900',
+  light:    'bg-green-950/60 text-green-300 border-green-900',
+}
+
+const DAY_LABELS = {
+  heavy:    'Heavy',
+  moderate: 'Moderate',
+  light:    'Light',
+}
+
+const LOAD_PCT_LABEL = {
+  heavy:    '>85% of 1RM',
+  moderate: '65–85% of 1RM',
+  light:    '<65% of 1RM',
 }
 
 interface Props {
-  initialPreferences?: UserPreferences | null
   userId?: string | null
 }
 
-export function Calculator({ initialPreferences, userId }: Props) {
+export function Calculator({ userId }: Props) {
   const { toast } = useToast()
 
-  const [exerciseName, setExerciseName] = useState('')
-  const [exerciseType, setExerciseType] = useState<ExerciseType>(
-    initialPreferences?.exercise_type ?? 'barbell'
-  )
-  const [workingWeight, setWorkingWeight] = useState('')
-  const [numSets, setNumSets] = useState(
-    initialPreferences?.default_sets ?? EXERCISE_TYPE_CONFIGS['barbell'].defaultSets
-  )
-  const [percentages, setPercentages] = useState<number[]>(
-    initialPreferences?.percentages ??
-      getPercentagesForSets('barbell', EXERCISE_TYPE_CONFIGS['barbell'].defaultSets)
-  )
-  const [reps, setReps] = useState<number[]>(
-    initialPreferences?.reps ??
-      getRepsForSets('barbell', EXERCISE_TYPE_CONFIGS['barbell'].defaultSets)
-  )
-  const [warmupSets, setWarmupSets] = useState<WarmupSet[]>([])
-  const [error, setError] = useState<string | null>(null)
+  // ── Inputs ─────────────────────────────────────────────────────────────────
+  const [exerciseName, setExerciseName]   = useState('')
+  const [equipment, setEquipment]         = useState<EquipmentType>('barbell')
+  const [oneRepMax, setOneRepMax]         = useState('')
+  const [targetWeight, setTargetWeight]   = useState('')
+  const [targetReps, setTargetReps]       = useState('')
+  const [targetSets, setTargetSets]       = useState('')
+  const [numWarmupSets, setNumWarmupSets] = useState<number>(2)
+
+  // ── Output ─────────────────────────────────────────────────────────────────
+  const [plan, setPlan]     = useState<WorkoutPlan | null>(null)
+  const [error, setError]   = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // When exercise type changes, reset to that type's defaults
-  useEffect(() => {
-    const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-    const sets = config.defaultSets
-    setNumSets(sets)
-    setPercentages(getPercentagesForSets(exerciseType, sets))
-    setReps(getRepsForSets(exerciseType, sets))
-    setWarmupSets([])
-    setError(null)
-  }, [exerciseType])
+  // Derive live load classification whenever 1RM + target weight are both valid
+  const orm = parseFloat(oneRepMax)
+  const tw  = parseFloat(targetWeight)
+  const liveClassification =
+    !isNaN(orm) && orm > 0 && !isNaN(tw) && tw > 0 && tw <= orm
+      ? classifyLoad(tw, orm)
+      : null
 
-  // When numSets changes, resize percentages/reps arrays
-  const handleNumSetsChange = useCallback(
-    (n: number) => {
-      setNumSets(n)
-      setPercentages(getPercentagesForSets(exerciseType, n))
-      setReps(getRepsForSets(exerciseType, n))
-      setWarmupSets([])
-    },
-    [exerciseType]
-  )
+  // Auto-update warmup set default when equipment or live classification changes
+  useEffect(() => {
+    if (liveClassification) {
+      setNumWarmupSets(getDefaultWarmupSets(equipment, liveClassification))
+    }
+    setPlan(null)
+    setError(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipment, oneRepMax, targetWeight])
 
   const handleCalculate = useCallback(() => {
-    const weight = parseFloat(workingWeight)
-    const err = validateCalculatorInput(weight, numSets, percentages, reps)
+    const ormVal = parseFloat(oneRepMax)
+    const twVal  = parseFloat(targetWeight)
+    const trVal  = parseInt(targetReps, 10)
+    const tsVal  = parseInt(targetSets, 10)
+
+    const err = validateWorkoutInput(ormVal, twVal, trVal, tsVal)
     if (err) {
       setError(err)
-      setWarmupSets([])
+      setPlan(null)
       return
     }
     setError(null)
-    setWarmupSets(
-      calculateWarmupSets({ workingWeight: weight, numSets, percentages, reps })
+    setPlan(
+      calculateWorkoutPlan({
+        exerciseName: exerciseName.trim() || 'Exercise',
+        equipment,
+        oneRepMax: ormVal,
+        targetWeight: twVal,
+        targetReps: trVal,
+        targetSets: tsVal,
+        numWarmupSets,
+      })
     )
-  }, [workingWeight, numSets, percentages, reps])
-
-  // Allow Enter key to trigger calculation
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleCalculate()
-  }
-
-  const weight = parseFloat(workingWeight)
-  const recommendation =
-    !isNaN(weight) && weight > 0
-      ? getRecommendation(weight, exerciseType)
-      : null
+  }, [exerciseName, equipment, oneRepMax, targetWeight, targetReps, targetSets, numWarmupSets])
 
   const handleSave = async () => {
     if (!userId) {
       toast({ title: 'Sign in to save workouts', variant: 'destructive' })
       return
     }
-    if (warmupSets.length === 0) return
+    if (!plan) return
 
     setSaving(true)
     const supabase = createClient()
     const { error: dbError } = await supabase.from('workout_sessions').insert({
       user_id: userId,
       exercise_name: exerciseName.trim() || 'Unnamed exercise',
-      exercise_type: exerciseType,
-      working_weight_kg: parseFloat(workingWeight),
-      warmup_sets: warmupSets,
+      exercise_type: equipment,
+      working_weight_kg: plan.workingSet.weight,
+      warmup_sets: plan.warmupSets,
     })
     setSaving(false)
 
     if (dbError) {
-      toast({
-        title: 'Failed to save',
-        description: dbError.message,
-        variant: 'destructive',
-      })
+      toast({ title: 'Failed to save', description: dbError.message, variant: 'destructive' })
     } else {
       toast({ title: 'Workout saved to history!' })
     }
   }
 
-  const config = EXERCISE_TYPE_CONFIGS[exerciseType]
-  const setSizeOptions = Object.keys(config.setOptions).map(Number).sort((a, b) => a - b)
+  const loadPct =
+    !isNaN(orm) && orm > 0 && !isNaN(tw) && tw > 0
+      ? Math.round((tw / orm) * 100)
+      : null
 
   return (
     <div className="mx-auto max-w-lg space-y-5 px-4 py-6">
+
       {/* Header */}
       <div className="flex items-center gap-2">
         <Dumbbell className="h-6 w-6 text-indigo-400" />
         <h1 className="text-2xl font-bold">Warmup Calculator</h1>
       </div>
 
-      {/* Exercise type */}
-      <ExerciseSelector value={exerciseType} onChange={setExerciseType} />
+      {/* Equipment */}
+      <ExerciseSelector value={equipment} onChange={setEquipment} />
 
       {/* Exercise name */}
       <div className="space-y-1.5">
@@ -159,91 +158,105 @@ export function Calculator({ initialPreferences, userId }: Props) {
         />
       </div>
 
-      {/* Working weight */}
+      {/* 1RM */}
       <div className="space-y-1.5">
-        <Label htmlFor="weight" className="text-slate-400">
-          Working weight (kg)
-        </Label>
+        <Label htmlFor="orm" className="text-slate-400">1RM (kg)</Label>
         <Input
-          id="weight"
+          id="orm"
           type="number"
           inputMode="decimal"
-          placeholder="100"
-          value={workingWeight}
-          onChange={(e) => {
-            setWorkingWeight(e.target.value)
-            setWarmupSets([])
-          }}
-          onKeyDown={handleKeyDown}
-          className="bg-slate-900 border-slate-700 text-xl h-12"
+          placeholder="e.g. 120"
+          value={oneRepMax}
+          onChange={(e) => setOneRepMax(e.target.value)}
+          className="bg-slate-900 border-slate-700 h-12 text-lg"
         />
       </div>
 
-      {/* Recommendation banner */}
-      {recommendation && (
-        <div
-          className={cn(
-            'rounded-xl border px-4 py-3 text-sm',
-            DAY_STYLES[recommendation.classification]
-          )}
-        >
-          <span className="font-semibold capitalize">
-            {recommendation.classification} day
-          </span>
+      {/* Target weight / reps / sets — 3-col grid */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="tw" className="text-slate-400">Weight (kg)</Label>
+          <Input
+            id="tw"
+            type="number"
+            inputMode="decimal"
+            placeholder="100"
+            value={targetWeight}
+            onChange={(e) => setTargetWeight(e.target.value)}
+            className="bg-slate-900 border-slate-700 h-12 text-lg"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="tr" className="text-slate-400">Reps</Label>
+          <Input
+            id="tr"
+            type="number"
+            inputMode="numeric"
+            placeholder="5"
+            value={targetReps}
+            onChange={(e) => setTargetReps(e.target.value)}
+            className="bg-slate-900 border-slate-700 h-12 text-lg"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ts" className="text-slate-400">Sets</Label>
+          <Input
+            id="ts"
+            type="number"
+            inputMode="numeric"
+            placeholder="3"
+            value={targetSets}
+            onChange={(e) => setTargetSets(e.target.value)}
+            className="bg-slate-900 border-slate-700 h-12 text-lg"
+          />
+        </div>
+      </div>
+
+      {/* Live load classification banner */}
+      {liveClassification && loadPct !== null && (
+        <div className={cn('rounded-xl border px-4 py-3 text-sm', DAY_STYLES[liveClassification])}>
+          <span className="font-semibold">{DAY_LABELS[liveClassification]} load</span>
           {' — '}
-          {recommendation.rationale}
+          {loadPct}% of 1RM &middot; {LOAD_PCT_LABEL[liveClassification]}
         </div>
       )}
 
-      {/* Number of warmup sets (only show if more than one positive option exists) */}
-      {setSizeOptions.filter((n) => n > 0).length > 1 && (
-        <div className="space-y-2">
-          <Label className="text-slate-400">
-            Warmup sets:{' '}
-            <span className="text-slate-200 font-semibold">{numSets}</span>
-          </Label>
-          <div className="flex gap-2">
-            {setSizeOptions.filter((n) => n > 0).map((n) => (
-              <Button
-                key={n}
-                variant={numSets === n ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => handleNumSetsChange(n)}
-                className={cn(
-                  'min-w-[44px] min-h-[44px]',
-                  numSets === n
-                    ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-600'
-                    : 'border-slate-700 text-slate-300'
-                )}
-              >
-                {n}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Set preview chips */}
-      {numSets > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {percentages.slice(0, numSets).map((pct, i) => (
-            <span
-              key={i}
-              className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400"
-            >
-              {pct}% × {reps[i] ?? '?'}
+      {/* Warmup sets chip selector */}
+      <div className="space-y-2">
+        <Label className="text-slate-400">
+          Warmup sets
+          {liveClassification && (
+            <span className="ml-1.5 text-slate-600 font-normal text-xs">
+              (suggested {getDefaultWarmupSets(equipment, liveClassification)} for {DAY_LABELS[liveClassification].toLowerCase()} load)
             </span>
+          )}
+        </Label>
+        <div className="flex gap-2">
+          {[1, 2, 3, 4].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => { setNumWarmupSets(n); setPlan(null) }}
+              className={cn(
+                'flex-1 rounded-xl border py-3 text-sm font-semibold transition-colors touch-manipulation min-h-[48px]',
+                numWarmupSets === n
+                  ? 'border-indigo-600 bg-indigo-950/60 text-indigo-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+              )}
+            >
+              {n}
+            </button>
           ))}
         </div>
-      )}
+      </div>
 
-      {/* Calculate button */}
+      {/* Calculate */}
       <Button
         onClick={handleCalculate}
         className="w-full bg-indigo-600 hover:bg-indigo-500 py-6 text-base font-semibold"
-        disabled={!workingWeight}
+        disabled={!oneRepMax || !targetWeight || !targetReps || !targetSets}
       >
-        Calculate Warmup Sets
+        Calculate
       </Button>
 
       {/* Error */}
@@ -254,45 +267,34 @@ export function Calculator({ initialPreferences, userId }: Props) {
       )}
 
       {/* Results */}
-      {warmupSets.length > 0 && (
+      {plan && (
         <>
           <Separator className="bg-slate-800" />
 
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-400">
-                Working weight:{' '}
-                <span className="text-slate-200 font-bold">
-                  {workingWeight} kg
-                </span>
-              </p>
-              <p className="text-sm text-slate-500">
-                {warmupSets.length} warmup{' '}
-                {warmupSets.length === 1 ? 'set' : 'sets'}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {warmupSets.map((set, i) => (
-                <WarmupSetCard
-                  key={set.setNumber}
-                  set={set}
-                  isLast={i === warmupSets.length - 1}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Working set reminder */}
-          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
-            <p className="text-sm text-slate-400">Working set</p>
-            <p className="text-2xl font-bold mt-1">
-              {workingWeight}
-              <span className="ml-1 text-base font-normal text-slate-400">kg</span>
+          {/* Session header */}
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-slate-200">
+              {exerciseName.trim() || 'Your session'}
             </p>
+            <span className={cn(
+              'rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+              DAY_STYLES[plan.classification]
+            )}>
+              {DAY_LABELS[plan.classification]}
+            </span>
           </div>
 
-          {/* Save to history */}
+          {/* Warmup sets */}
+          <div className="space-y-3">
+            {plan.warmupSets.map((set) => (
+              <WarmupSetCard key={set.setNumber} set={set} />
+            ))}
+          </div>
+
+          {/* Working set */}
+          <WorkingSetCard workingSet={plan.workingSet} />
+
+          {/* Save */}
           <Button
             variant="outline"
             onClick={handleSave}
@@ -303,13 +305,6 @@ export function Calculator({ initialPreferences, userId }: Props) {
             {saving ? 'Saving...' : userId ? 'Save to history' : 'Sign in to save'}
           </Button>
         </>
-      )}
-
-      {/* Empty state when bodyweight selected */}
-      {exerciseType === 'bodyweight' && numSets === 0 && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-center text-slate-500 text-sm">
-          Bodyweight movements need minimal warmup — just do some easy reps of the movement itself.
-        </div>
       )}
     </div>
   )
